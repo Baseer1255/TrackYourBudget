@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom'; // 🆕 ADDED: useNavigate
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import { evaluate } from 'mathjs';
 import Papa from 'papaparse'; 
 import confetti from 'canvas-confetti';
-import Tesseract from 'tesseract.js'; // 🤖 NEW: AI Receipt Scanner Engine
+import Tesseract from 'tesseract.js'; 
 
 // 🔊 Custom Web Audio API Engine
 const playSound = (type) => {
@@ -40,7 +40,7 @@ const playSound = (type) => {
 
 const ProjectDetails = () => {
   const { id } = useParams();
-  const navigate = useNavigate(); // 🆕 ADDED: navigate hook
+  const navigate = useNavigate();
   const [project, setProject] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -80,6 +80,11 @@ const ProjectDetails = () => {
   const [txName, setTxName] = useState('');
   const [txAmount, setTxAmount] = useState('');
   const [txCategory, setTxCategory] = useState('General');
+  
+  // Autopay State
+  const [isAutopay, setIsAutopay] = useState(false);
+  const [dueDate, setDueDate] = useState('');
+
   const [isAdding, setIsAdding] = useState(false);
   const [calcInput, setCalcInput] = useState('');
   const [calcResult, setCalcResult] = useState('');
@@ -91,7 +96,7 @@ const ProjectDetails = () => {
 
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef(null);
-  const receiptInputRef = useRef(null); // Ref for the camera/image upload
+  const receiptInputRef = useRef(null); 
   
   const [toastMessage, setToastMessage] = useState('');
   const [isInviting, setIsInviting] = useState(false);
@@ -151,7 +156,6 @@ const ProjectDetails = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-// --- UPGRADED: BULLETPROOF AI RECEIPT SCANNER ---
   const handleReceiptScan = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -161,7 +165,6 @@ const ProjectDetails = () => {
     playSound('pop');
 
     try {
-      // 1. SANITIZER: Load the file into a native browser Image object
       const img = new Image();
       img.src = URL.createObjectURL(file);
       await new Promise((resolve, reject) => {
@@ -169,17 +172,14 @@ const ProjectDetails = () => {
         img.onerror = reject;
       });
 
-      // 2. Draw it to a hidden HTML canvas to strip weird encodings (WebP, HEIC, etc.)
       const canvas = document.createElement('canvas');
       canvas.width = img.width;
       canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
       
-      // 3. Extract as a mathematically perfect, uncorrupted Base64 PNG
       const cleanImageData = canvas.toDataURL('image/png');
 
-      // 4. Pass the cleaned image directly to Tesseract
       const result = await Tesseract.recognize(cleanImageData, 'eng', {
         logger: (m) => {
           if (m.status === 'recognizing text') {
@@ -191,9 +191,6 @@ const ProjectDetails = () => {
       });
 
       const text = result.data.text;
-      console.log("🤖 Raw OCR Text Extracted:\n", text); 
-
-      // 5. Improved Regex Algorithm
       const priceRegex = /(?:[$])?\s*\d{1,3}(?:[,]\d{3})*(?:[.]\d{2})/g;
       const prices = text.match(priceRegex);
 
@@ -222,6 +219,7 @@ const ProjectDetails = () => {
       if (receiptInputRef.current) receiptInputRef.current.value = '';
     }
   };
+
   const submitAddSalary = async () => {
     const amount = parseFloat(salaryAmount);
     if (isNaN(amount) || amount <= 0) return alert("Please enter a valid amount.");
@@ -286,18 +284,42 @@ const ProjectDetails = () => {
   const handleAddTransaction = async (e) => {
     e.preventDefault();
     setIsAdding(true);
-    
     playSound('success'); 
 
     const { data: { user } } = await supabase.auth.getUser();
     const baseAmount = toBaseCurrency(txAmount);
-    const newTx = { id: Math.random(), project_id: id, name: txName, amount: baseAmount, category: txCategory, created_at: new Date().toISOString() };
+    
+    const newTx = { 
+      id: Math.random(), 
+      project_id: id, 
+      name: txName, 
+      amount: baseAmount, 
+      category: txCategory, 
+      created_at: new Date().toISOString(),
+      is_autopay: isAutopay,
+      due_date: isAutopay ? dueDate : null
+    };
     
     setTransactions([newTx, ...transactions]);
     
-    const { error } = await supabase.from('transactions').insert([{ project_id: id, user_id: user.id, name: txName, amount: baseAmount, category: txCategory }]);
-    if (error) { alert('Error logging expense: ' + error.message); fetchData(); }
-    else { setTxName(''); setTxAmount(''); setTxCategory('General'); showToast('✅ Expense saved successfully!'); }
+    const { error } = await supabase.from('transactions').insert([{ 
+      project_id: id, 
+      user_id: user.id, 
+      name: txName, 
+      amount: baseAmount, 
+      category: txCategory,
+      is_autopay: isAutopay,
+      due_date: isAutopay ? dueDate : null
+    }]);
+
+    if (error) { 
+      alert('Error logging expense: ' + error.message); 
+      fetchData(); 
+    } else { 
+      setTxName(''); setTxAmount(''); setTxCategory('General'); 
+      setIsAutopay(false); setDueDate('');
+      showToast(isAutopay ? '⏱️ Autopay Scheduled!' : '✅ Expense saved successfully!'); 
+    }
     setIsAdding(false);
   };
 
@@ -372,7 +394,6 @@ const ProjectDetails = () => {
     else { showToast(`🤝 Invite sent!`); setInviteEmail(''); setIsInviting(false); fetchData(); }
   };
 
-  // 🆕 ADDED: DELETE WORKSPACE LOGIC
   const handleDeleteWorkspace = async () => {
     const isConfirmed = window.confirm("Are you sure you want to delete this workspace? This action cannot be undone.");
     if (!isConfirmed) return;
@@ -406,8 +427,12 @@ const ProjectDetails = () => {
 
   if (!project) return <div className="p-8 text-center text-red-500 font-bold mt-20">Project not found!</div>;
 
-  // Math variables
-  const totalSpent = transactions.reduce((sum, tx) => sum + (parseFloat(tx.amount) || 0), 0);
+  // Math variables & Autopay Logic
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const deductedTransactions = transactions.filter(tx => !tx.is_autopay || (tx.is_autopay && tx.due_date <= todayStr));
+  
+  const totalSpent = deductedTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amount) || 0), 0);
   const currentBudget = parseFloat(project.total_budget) || 0;
   const remainingBudget = currentBudget - totalSpent;
   const budgetColorClass = remainingBudget >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400';
@@ -416,10 +441,13 @@ const ProjectDetails = () => {
 
   const categoryTotals = {};
   categories.forEach(cat => categoryTotals[cat] = 0);
-  transactions.forEach(tx => { categoryTotals[tx.category || 'General'] += (parseFloat(tx.amount) || 0); });
+  deductedTransactions.forEach(tx => { categoryTotals[tx.category || 'General'] += (parseFloat(tx.amount) || 0); });
+
   const filteredTransactions = activeFilter === 'All' ? transactions : transactions.filter(tx => (tx.category || 'General') === activeFilter);
   const chartData = [...filteredTransactions].reverse().map(tx => ({ name: tx.name.length > 10 ? tx.name.substring(0, 10) + '...' : tx.name, amount: (parseFloat(tx.amount) || 0) * exchangeRate }));
-  const calcButtons = ['7', '8', '9', '/', '4', '5', '6', '*', '1', '2', '3', '-', 'C', '0', '=', '+'];
+  
+  // Upgraded Calculator Array
+  const calcButtons = ['C', '(', ')', '/', '7', '8', '9', '*', '4', '5', '6', '-', '1', '2', '3', '+', '0', '00', '.', '='];
 
   // Smart Predictive Alerts Engine
   let isTrendingOverBudget = false;
@@ -576,7 +604,7 @@ const ProjectDetails = () => {
             )}
           </AnimatePresence>
 
-          {/* 🆕 ADDED: DANGER ZONE - DELETE WORKSPACE */}
+          {/* DANGER ZONE - DELETE WORKSPACE */}
           <div className="mt-10 mb-10 p-6 border border-red-500/20 bg-red-500/5 dark:bg-red-900/10 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden">
             <div>
               <h3 className="text-red-600 dark:text-red-400 font-semibold text-lg">Danger Zone</h3>
@@ -680,7 +708,6 @@ const ProjectDetails = () => {
                     Record Transaction
                   </h3>
                   
-                  {/* NEW: OCR Camera Button */}
                   <input 
                     type="file" 
                     accept="image/*" 
@@ -712,6 +739,20 @@ const ProjectDetails = () => {
                     <span className="absolute left-4 top-3 text-slate-400 text-sm font-bold">{getCurrencySymbol()}</span>
                     <input type="number" step="0.01" required placeholder="0.00" className="w-full pl-9 pr-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} />
                   </div>
+
+                  {/* AUTOPAY UI */}
+                  <div className="flex items-center gap-3 px-2 pt-1">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={isAutopay} onChange={(e) => setIsAutopay(e.target.checked)} />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                      <span className="ml-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Schedule Autopay</span>
+                    </label>
+                  </div>
+                  
+                  {isAutopay && (
+                    <input type="date" required className="w-full px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all text-slate-600 dark:text-slate-300" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  )}
+
                   <button type="submit" disabled={isAdding || isScanning} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl text-sm shadow-md shadow-indigo-500/20 transition-all transform active:scale-[0.98] disabled:opacity-50">
                     {isAdding ? 'Saving...' : 'Submit Expense'}
                   </button>
@@ -728,8 +769,8 @@ const ProjectDetails = () => {
                   {calcResult || calcInput || '0'}
                 </div>
                 <div className="grid grid-cols-4 gap-2">
-                  {calcButtons.map((btn) => (
-                    <button key={btn} type="button" onClick={() => { handleCalcClick(btn); playSound('pop'); }} className={`p-2.5 text-lg font-bold rounded-xl transition-all active:scale-95 ${btn === '=' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : btn === 'C' ? 'bg-red-50 dark:bg-red-900/20 text-red-500' : ['/', '*', '-', '+'].includes(btn) ? 'bg-slate-100 dark:bg-slate-800 text-indigo-500' : 'bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md'}`}>
+                  {calcButtons.map((btn, index) => (
+                    <button key={index} type="button" onClick={() => { handleCalcClick(btn); playSound('pop'); }} className={`p-2.5 text-lg font-bold rounded-xl transition-all active:scale-95 ${btn === '=' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : btn === 'C' ? 'bg-red-50 dark:bg-red-900/20 text-red-500' : ['/', '*', '-', '+', '(', ')'].includes(btn) ? 'bg-slate-100 dark:bg-slate-800 text-indigo-500' : 'bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md'}`}>
                       {btn}
                     </button>
                   ))}
@@ -891,11 +932,16 @@ const ProjectDetails = () => {
                         </div>
                         <div>
                           <p className="font-bold text-slate-900 dark:text-slate-100">{tx.name}</p>
-                          <p className="text-[11px] font-semibold text-slate-400 mt-0.5">{tx.category} <span className="opacity-40 mx-1">•</span> {new Date(tx.created_at).toLocaleDateString()}</p>
+                          <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
+                            {tx.category} <span className="opacity-40 mx-1">•</span> {new Date(tx.created_at).toLocaleDateString()}
+                            {tx.is_autopay && <span className="text-indigo-500 font-bold ml-2">(Autopay: {tx.due_date})</span>}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
-                        <span className="font-extrabold text-slate-700 dark:text-slate-300">-{(formatCurrency(tx.amount))}</span>
+                        <span className={`font-extrabold ${tx.is_autopay && tx.due_date > todayStr ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                          -{(formatCurrency(tx.amount))}
+                        </span>
                         <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-sm active:scale-95 print:hidden">✕</button>
                       </div>
                     </li>
