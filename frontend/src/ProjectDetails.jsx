@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom'; // 🆕 ADDED: useNavigate
 import { supabase } from './supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -40,6 +40,7 @@ const playSound = (type) => {
 
 const ProjectDetails = () => {
   const { id } = useParams();
+  const navigate = useNavigate(); // 🆕 ADDED: navigate hook
   const [project, setProject] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -371,6 +372,21 @@ const ProjectDetails = () => {
     else { showToast(`🤝 Invite sent!`); setInviteEmail(''); setIsInviting(false); fetchData(); }
   };
 
+  // 🆕 ADDED: DELETE WORKSPACE LOGIC
+  const handleDeleteWorkspace = async () => {
+    const isConfirmed = window.confirm("Are you sure you want to delete this workspace? This action cannot be undone.");
+    if (!isConfirmed) return;
+
+    try {
+      const { error } = await supabase.from('projects').delete().eq('id', id);
+      if (error) throw error;
+      navigate('/'); 
+    } catch (error) {
+      console.error("Error deleting workspace:", error);
+      alert("Could not delete workspace. Check your console for details.");
+    }
+  };
+
   // --- SKELETON LOADING SCREEN ---
   if (isLoading) return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 md:p-8">
@@ -559,6 +575,22 @@ const ProjectDetails = () => {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* 🆕 ADDED: DANGER ZONE - DELETE WORKSPACE */}
+          <div className="mt-10 mb-10 p-6 border border-red-500/20 bg-red-500/5 dark:bg-red-900/10 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden">
+            <div>
+              <h3 className="text-red-600 dark:text-red-400 font-semibold text-lg">Danger Zone</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Permanently delete this workspace and all its associated data. This action cannot be undone.
+              </p>
+            </div>
+            <button
+              onClick={handleDeleteWorkspace}
+              className="whitespace-nowrap px-6 py-2.5 bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white transition-all rounded-xl font-medium text-sm border border-red-500/20 shadow-sm active:scale-95"
+            >
+              Delete Workspace
+            </button>
+          </div>
 
           {/* PREMIUM FINTECH FOOTER */}
           <footer className="mt-20 border-t border-slate-200/50 dark:border-slate-800/50 pt-8 pb-6 text-center max-w-6xl mx-auto px-4 relative z-10">
@@ -863,7 +895,7 @@ const ProjectDetails = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
-                        <span className="font-extrabold text-slate-700 dark:text-slate-300">-{formatCurrency(tx.amount)}</span>
+                        <span className="font-extrabold text-slate-700 dark:text-slate-300">-{(formatCurrency(tx.amount))}</span>
                         <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-sm active:scale-95 print:hidden">✕</button>
                       </div>
                     </li>
