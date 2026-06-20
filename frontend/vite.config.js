@@ -7,6 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        cleanupOutdatedCaches: true, // Instantly deletes the old 404 files
+        clientsClaim: true,          // Takes control of the browser immediately
+        skipWaiting: true            // Forces the new version to install in the background
+      },
       manifest: {
         name: 'TrakYourBudget',
         short_name: 'TrakYourBudget',
@@ -16,7 +21,7 @@ export default defineConfig({
         display: 'standalone',
         icons: [
           {
-            src: '/logo-transparent.png', // Make sure this perfectly matches your logo file name!
+            src: '/logo-transparent.png',
             sizes: '192x192',
             type: 'image/png'
           },
