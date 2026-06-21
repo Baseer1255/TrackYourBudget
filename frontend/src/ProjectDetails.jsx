@@ -439,9 +439,6 @@ const ProjectDetails = () => {
   const spendPercent = Math.min((totalSpent / (currentBudget || 1)) * 100, 100);
   let progressColor = spendPercent >= 85 ? 'from-red-500 to-rose-500' : spendPercent >= 50 ? 'from-amber-400 to-orange-500' : 'from-indigo-500 to-purple-500';
 
-  const spendPercent = Math.min((totalSpent / (currentBudget || 1)) * 100, 100);
-  let progressColor = spendPercent >= 85 ? 'from-red-500 to-rose-500' : spendPercent >= 50 ? 'from-amber-400 to-orange-500' : 'from-indigo-500 to-purple-500';
-
   // 👇 ADD THIS NEW BANNER LOGIC 👇
   let bannerStatus = { text: 'On Track', color: 'bg-emerald-500 dark:bg-emerald-600', shadow: 'shadow-emerald-500/20', icon: '✅' };
   if (spendPercent >= 100) bannerStatus = { text: 'Over Budget', color: 'bg-red-500 dark:bg-red-600', shadow: 'shadow-red-500/20', icon: '🚨' };
