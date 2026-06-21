@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import { evaluate } from 'mathjs';
 import Papa from 'papaparse'; 
@@ -449,6 +449,13 @@ const ProjectDetails = () => {
 
   const filteredTransactions = activeFilter === 'All' ? transactions : transactions.filter(tx => (tx.category || 'General') === activeFilter);
   const chartData = [...filteredTransactions].reverse().map(tx => ({ name: tx.name.length > 10 ? tx.name.substring(0, 10) + '...' : tx.name, amount: (parseFloat(tx.amount) || 0) * exchangeRate }));
+  // 👇 ADD DONUT CHART DATA 👇
+  const pieData = Object.keys(categoryTotals)
+    .filter(cat => categoryTotals[cat] > 0)
+    .map(cat => ({ name: cat, value: categoryTotals[cat] * exchangeRate }));
+    
+  // Premium Fintech Color Palette for Categories
+  const CATEGORY_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#10b981', '#14b8a6', '#64748b'];
   
   // Upgraded Calculator Array
   const calcButtons = ['C', '(', ')', '/', '7', '8', '9', '*', '4', '5', '6', '-', '1', '2', '3', '+', '0', '00', '.', '='];
@@ -909,33 +916,62 @@ const ProjectDetails = () => {
                 {isEditingBudgets && <button onClick={handleSaveCategoryBudgets} className="mt-6 w-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-bold py-3 rounded-xl text-sm transition-transform active:scale-[0.98] print:hidden shadow-md">Save Limits</button>}
               </div>
 
-              {/* Chart */}
+            {/* Analytics Charts */}
               {filteredTransactions.length > 0 && (
-                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none">
-                  <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 mb-6 flex items-center gap-2">
-                    <span className="p-1.5 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-lg">📊</span>
-                    Spending Breakdown
-                  </h3>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} fontWeight={600} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={11} fontWeight={600} tickLine={false} axisLine={false} tickFormatter={(v) => formatCurrency(v / exchangeRate)} />
-                        <Tooltip 
-                          formatter={(value) => [formatCurrency(value / exchangeRate), "Amount"]}
-                          cursor={{ fill: '#f1f5f9', opacity: 0.05 }}
-                          contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: '#fff', color: '#0f172a', fontSize: '13px', fontWeight: '600', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
-                        />
-                        <Bar dataKey="amount" fill="url(#colorUv)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-                        <defs>
-                          <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#6366f1" stopOpacity={1} />
-                            <stop offset="100%" stopColor="#a855f7" stopOpacity={1} />
-                          </linearGradient>
-                        </defs>
-                      </BarChart>
-                    </ResponsiveContainer>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:hidden">
+                  
+                  {/* Category Donut Chart */}
+                  <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none">
+                    <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 mb-6 flex items-center gap-2">
+                      <span className="p-1.5 bg-pink-100 dark:bg-pink-900/50 text-pink-600 dark:text-pink-400 rounded-lg">🍩</span>
+                      Category Split
+                    </h3>
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={5} dataKey="value" stroke="none">
+                            {pieData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            formatter={(value) => formatCurrency(value / exchangeRate)}
+                            contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: '#fff', color: '#0f172a', fontSize: '13px', fontWeight: '600', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
+                          />
+                          <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: '600', paddingTop: '10px' }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
+
+                  {/* Timeline Bar Chart */}
+                  <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none">
+                    <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 mb-6 flex items-center gap-2">
+                      <span className="p-1.5 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-lg">📈</span>
+                      Spending Timeline
+                    </h3>
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                          <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} fontWeight={600} tickLine={false} axisLine={false} />
+                          <YAxis stroke="#94a3b8" fontSize={11} fontWeight={600} tickLine={false} axisLine={false} tickFormatter={(v) => formatCurrency(v / exchangeRate)} />
+                          <Tooltip 
+                            formatter={(value) => [formatCurrency(value / exchangeRate), "Amount"]}
+                            cursor={{ fill: '#f1f5f9', opacity: 0.05 }}
+                            contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: '#fff', color: '#0f172a', fontSize: '13px', fontWeight: '600', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
+                          />
+                          <Bar dataKey="amount" fill="url(#colorUv)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                          <defs>
+                            <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#6366f1" stopOpacity={1} />
+                              <stop offset="100%" stopColor="#a855f7" stopOpacity={1} />
+                            </linearGradient>
+                          </defs>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
                 </div>
               )}
 
