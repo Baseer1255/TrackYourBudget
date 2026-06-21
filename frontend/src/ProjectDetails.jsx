@@ -81,6 +81,8 @@ const ProjectDetails = () => {
   const [txAmount, setTxAmount] = useState('');
   const [txCategory, setTxCategory] = useState('General');
   const [txPaidBy, setTxPaidBy] = useState('Me');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isFabModalOpen, setIsFabModalOpen] = useState(false);
   
   // Autopay State
   const [isAutopay, setIsAutopay] = useState(false);
@@ -281,7 +283,8 @@ const ProjectDetails = () => {
     const { error } = await supabase.from('savings_goals').delete().eq('id', goalId);
     if (!error) { showToast('🗑️ Goal removed!'); fetchData(); }
   };
-const handleAddTransaction = async (e) => {
+
+  const handleAddTransaction = async (e) => {
     e.preventDefault();
     setIsAdding(true);
     playSound('success'); 
@@ -289,7 +292,6 @@ const handleAddTransaction = async (e) => {
     const { data: { user } } = await supabase.auth.getUser();
     const baseAmount = toBaseCurrency(txAmount);
     
-    // Updated Local State (Includes Autopay and Paid By)
     const newTx = { 
       id: Math.random(), 
       project_id: id, 
@@ -304,7 +306,6 @@ const handleAddTransaction = async (e) => {
     
     setTransactions([newTx, ...transactions]);
     
-    // Updated Database Insert (Sends fields to Supabase)
     const { error } = await supabase.from('transactions').insert([{ 
       project_id: id, 
       user_id: user.id, 
@@ -320,13 +321,13 @@ const handleAddTransaction = async (e) => {
       alert('Error logging expense: ' + error.message); 
       fetchData(); 
     } else { 
-      // Reset all form inputs on success
       setTxName(''); 
       setTxAmount(''); 
       setTxCategory('General'); 
       setIsAutopay(false); 
       setDueDate('');
       setTxPaidBy('Me'); 
+      setIsFabModalOpen(false); // Close Modal on success
       showToast(isAutopay ? '⏱️ Autopay Scheduled!' : '✅ Expense saved successfully!'); 
     }
     setIsAdding(false);
@@ -438,7 +439,6 @@ const handleAddTransaction = async (e) => {
 
   // Math variables & Autopay Logic
   const todayStr = new Date().toISOString().split('T')[0];
-
   const deductedTransactions = transactions.filter(tx => !tx.is_autopay || (tx.is_autopay && tx.due_date <= todayStr));
   
   const totalSpent = deductedTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amount) || 0), 0);
@@ -448,21 +448,30 @@ const handleAddTransaction = async (e) => {
   const spendPercent = Math.min((totalSpent / (currentBudget || 1)) * 100, 100);
   let progressColor = spendPercent >= 85 ? 'from-red-500 to-rose-500' : spendPercent >= 50 ? 'from-amber-400 to-orange-500' : 'from-indigo-500 to-purple-500';
 
-  // 👇 ADD THIS NEW BANNER LOGIC 👇
+  // Dynamic status banner
   let bannerStatus = { text: 'On Track', color: 'bg-emerald-500 dark:bg-emerald-600', shadow: 'shadow-emerald-500/20', icon: '✅' };
   if (spendPercent >= 100) bannerStatus = { text: 'Over Budget', color: 'bg-red-500 dark:bg-red-600', shadow: 'shadow-red-500/20', icon: '🚨' };
   else if (spendPercent >= 80) bannerStatus = { text: 'Approaching Limit', color: 'bg-amber-500 dark:bg-amber-600', shadow: 'shadow-amber-500/20', icon: '⚠️' };
+  
   const categoryTotals = {};
   categories.forEach(cat => categoryTotals[cat] = 0);
   deductedTransactions.forEach(tx => { categoryTotals[tx.category || 'General'] += (parseFloat(tx.amount) || 0); });
 
   const filteredTransactions = activeFilter === 'All' ? transactions : transactions.filter(tx => (tx.category || 'General') === activeFilter);
-  const chartData = [...filteredTransactions].reverse().map(tx => ({ name: tx.name.length > 10 ? tx.name.substring(0, 10) + '...' : tx.name, amount: (parseFloat(tx.amount) || 0) * exchangeRate }));
-  // 👇 ADD DONUT CHART DATA 👇
+  
+  // Search bar logic integration
+  const displayedTransactions = filteredTransactions.filter(tx => 
+    tx.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (tx.category || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const chartData = [...displayedTransactions].reverse().map(tx => ({ name: tx.name.length > 10 ? tx.name.substring(0, 10) + '...' : tx.name, amount: (parseFloat(tx.amount) || 0) * exchangeRate }));
+  
   const pieData = Object.keys(categoryTotals)
     .filter(cat => categoryTotals[cat] > 0)
     .map(cat => ({ name: cat, value: categoryTotals[cat] * exchangeRate }));
-    // 👇 SETTLEMENT MATH ENGINE 👇
+    
+  // Group Settlement logic engine
   const projectMembers = ['Me', ...(project.collaborators || [])];
   const splitShare = projectMembers.length > 0 ? totalSpent / projectMembers.length : totalSpent;
   
@@ -474,19 +483,17 @@ const handleAddTransaction = async (e) => {
     if (memberBalances[payer] !== undefined) {
       memberBalances[payer] += (parseFloat(tx.amount) || 0);
     } else {
-      memberBalances['Me'] += (parseFloat(tx.amount) || 0); // Fallback
+      memberBalances['Me'] += (parseFloat(tx.amount) || 0);
     }
   });
 
   const settlements = projectMembers.map(member => {
     const paid = memberBalances[member];
-    const balance = paid - splitShare; // Positive = they are owed money. Negative = they owe money.
+    const balance = paid - splitShare;
     return { member, paid, balance };
-  }).sort((a, b) => b.balance - a.balance); // Sort so people who are owed the most are at the top
-  // Premium Fintech Color Palette for Categories
+  }).sort((a, b) => b.balance - a.balance);
+
   const CATEGORY_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#10b981', '#14b8a6', '#64748b'];
-  
-  // Upgraded Calculator Array
   const calcButtons = ['C', '(', ')', '/', '7', '8', '9', '*', '4', '5', '6', '-', '1', '2', '3', '+', '0', '00', '.', '='];
 
   // Smart Predictive Alerts Engine
@@ -624,7 +631,7 @@ const handleAddTransaction = async (e) => {
 
         <div id="pdf-report-content" className="pb-8 space-y-6">
 
-          {/* 👇 NEW DYNAMIC STATUS BANNER 👇 */}
+          {/* DYNAMIC STATUS BANNER */}
           <div className={`print:hidden flex items-center justify-between p-5 rounded-2xl text-white shadow-lg transition-colors duration-700 ${bannerStatus.color} ${bannerStatus.shadow}`}>
             <div className="flex items-center gap-4">
               <div className="text-3xl bg-white/20 p-2 rounded-xl backdrop-blur-sm">
@@ -643,7 +650,27 @@ const handleAddTransaction = async (e) => {
               </button>
             )}
           </div>
-          {/* 👆 END STATUS BANNER 👆 */}
+
+          {/* 4 SUMMARY CARDS ROW */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:hidden">
+            <div className="bg-white/80 dark:bg-slate-900/80 p-5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-1">Total Budget</p>
+              <p className="text-xl font-extrabold text-slate-800 dark:text-slate-100">{formatCurrency(currentBudget)}</p>
+            </div>
+            <div className="bg-white/80 dark:bg-slate-900/80 p-5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-1">Total Spent</p>
+              <p className="text-xl font-extrabold text-rose-600 dark:text-rose-400">{formatCurrency(totalSpent)}</p>
+            </div>
+            <div className="bg-white/80 dark:bg-slate-900/80 p-5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-1">Remaining</p>
+              <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">{formatCurrency((currentBudget || 0) - totalSpent)}</p>
+            </div>
+            <div className="bg-white/80 dark:bg-slate-900/80 p-5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-1">Transactions</p>
+              <p className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400">{displayedTransactions.length}</p>
+            </div>
+          </div>
+
           {/* PREDICTIVE ALERTS BANNER */}
           <AnimatePresence>
             {isTrendingOverBudget && (
@@ -664,41 +691,7 @@ const handleAddTransaction = async (e) => {
             )}
           </AnimatePresence>
 
-          {/* DANGER ZONE - DELETE WORKSPACE */}
-          <div className="mt-10 mb-10 p-6 border border-red-500/20 bg-red-500/5 dark:bg-red-900/10 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden">
-            <div>
-              <h3 className="text-red-600 dark:text-red-400 font-semibold text-lg">Danger Zone</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Permanently delete this workspace and all its associated data. This action cannot be undone.
-              </p>
-            </div>
-            <button
-              onClick={handleDeleteWorkspace}
-              className="whitespace-nowrap px-6 py-2.5 bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white transition-all rounded-xl font-medium text-sm border border-red-500/20 shadow-sm active:scale-95"
-            >
-              Delete Workspace
-            </button>
-          </div>
-
-          {/* PREMIUM FINTECH FOOTER */}
-          <footer className="mt-20 border-t border-slate-200/50 dark:border-slate-800/50 pt-8 pb-6 text-center max-w-6xl mx-auto px-4 relative z-10">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-semibold text-slate-400 dark:text-slate-500">
-              <p>© 2026 TrakYourBudget. All rights reserved.</p>
-              <div className="flex flex-wrap justify-center items-center gap-6">
-                <span className="flex items-center gap-1.5">
-                  <span>👤</span> Baseer Ur Rehman
-                </span>
-                <a href="mailto:baseerurrehman1255@gmail.com" className="hover:text-indigo-500 transition-colors flex items-center gap-1.5">
-                  <span>✉️</span> baseerurrehman1255@gmail.com
-                </a>
-                <a href="https://www.linkedin.com/in/baseer-ur-rehman-8ab612309" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 bg-indigo-500/5 dark:bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/10">
-                  <svg width="14" height="16" fill="currentColor" viewBox="0 0 24 24" className="inline"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.5-1.75s.784-1.75 1.75-1.75 1.75.79 1.75 1.75-.784 1.75-1.75 1.75zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg> Connect on LinkedIn
-                </a>
-              </div>
-            </div>
-          </footer>
-
-          {/* HERO CARDS */}
+          {/* HERO OVERVIEW CARDS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-xl shadow-slate-200/50 dark:shadow-none flex flex-col justify-between group relative overflow-hidden">
               <div className="relative z-10">
@@ -755,70 +748,12 @@ const handleAddTransaction = async (e) => {
             </div>
           </div>
 
+          {/* DUAL WORKSPACE PANEL GRID */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:flex print:flex-col">
             
-            {/* LEFT COLUMN: ACTIONS */}
+            {/* LEFT COLUMN: MINI UTILITIES */}
             <div className="lg:col-span-1 flex flex-col gap-6 print:hidden">
               
-              {/* Record Expense with Camera Upload */}
-              <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none">
-                <div className="flex justify-between items-center mb-5">
-                  <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                    <span className="p-1.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-lg">💸</span>
-                    Record Transaction
-                  </h3>
-                  
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    capture="environment" 
-                    ref={receiptInputRef} 
-                    onChange={handleReceiptScan} 
-                    className="hidden" 
-                  />
-                  <button 
-                    type="button" 
-                    onClick={() => receiptInputRef.current?.click()} 
-                    disabled={isScanning}
-                    className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-all active:scale-95 shadow-sm disabled:opacity-50 flex items-center gap-1"
-                  >
-                    {isScanning ? (
-                      <>⏳ {scanProgress}</>
-                    ) : (
-                      <>📸 Scan Receipt</>
-                    )}
-                  </button>
-                </div>
-
-                <form onSubmit={handleAddTransaction} className="space-y-4">
-                  <input type="text" required placeholder="Description (e.g. Uber)" className="w-full px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:font-medium" value={txName} onChange={(e) => setTxName(e.target.value)} />
-                  <select className="w-full px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer" value={txCategory} onChange={(e) => setTxCategory(e.target.value)}>
-                    {categories.slice(1).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
-                  <div className="relative">
-                    <span className="absolute left-4 top-3 text-slate-400 text-sm font-bold">{getCurrencySymbol()}</span>
-                    <input type="number" step="0.01" required placeholder="0.00" className="w-full pl-9 pr-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} />
-                  </div>
-
-                  {/* AUTOPAY UI */}
-                  <div className="flex items-center gap-3 px-2 pt-1">
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" className="sr-only peer" checked={isAutopay} onChange={(e) => setIsAutopay(e.target.checked)} />
-                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
-                      <span className="ml-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Schedule Autopay</span>
-                    </label>
-                  </div>
-                  
-                  {isAutopay && (
-                    <input type="date" required className="w-full px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all text-slate-600 dark:text-slate-300" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                  )}
-
-                  <button type="submit" disabled={isAdding || isScanning} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl text-sm shadow-md shadow-indigo-500/20 transition-all transform active:scale-[0.98] disabled:opacity-50">
-                    {isAdding ? 'Saving...' : 'Submit Expense'}
-                  </button>
-                </form>
-              </div>
-
               {/* Quick Calculator */}
               <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none">
                 <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 mb-5 flex items-center gap-2">
@@ -836,12 +771,55 @@ const handleAddTransaction = async (e) => {
                   ))}
                 </div>
               </div>
+
+              {/* Category Limits Display */}
+              <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <span className="p-1.5 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-lg">⚖️</span>
+                    Category Limits
+                  </h3>
+                  <button onClick={() => setIsEditingBudgets(!isEditingBudgets)} className="print:hidden text-[10px] font-bold uppercase tracking-widest bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-3 py-1.5 rounded-md transition-colors active:scale-95">
+                    {isEditingBudgets ? 'Cancel' : 'Edit Limits'}
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {categories.slice(1).map(cat => {
+                    const limit = localCatBudgets[cat] || 0;
+                    const spent = categoryTotals[cat];
+                    const percent = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
+                    const barColor = percent >= 90 ? 'from-red-400 to-red-500' : percent >= 75 ? 'from-amber-400 to-orange-400' : 'from-indigo-400 to-purple-500';
+                    return (
+                      <div key={cat} className="bg-slate-50/50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">{cat}</span>
+                          {isEditingBudgets ? (
+                            <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-md focus-within:border-indigo-500 transition-colors">
+                              <span className="text-slate-400 text-xs font-semibold">{getCurrencySymbol()}</span>
+                              <input type="number" className="w-16 bg-transparent text-xs font-bold outline-none text-slate-900 dark:text-white" value={localCatBudgets[cat] || ''} onChange={(e) => handleBudgetChange(cat, e.target.value)} />
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-slate-500 tracking-wide">{formatCurrency(spent)} <span className="font-normal opacity-60">/ {limit > 0 ? formatCurrency(limit) : '∞'}</span></span>
+                          )}
+                        </div>
+                        {!isEditingBudgets && limit > 0 && (
+                          <div className="w-full bg-slate-200/60 dark:bg-slate-700/50 rounded-full h-1.5 overflow-hidden shadow-inner">
+                            <div className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-700`} style={{ width: `${percent}%` }}></div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {isEditingBudgets && <button onClick={handleSaveCategoryBudgets} className="mt-6 w-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-bold py-3 rounded-xl text-sm transition-transform active:scale-[0.98] print:hidden shadow-md">Save Limits</button>}
+              </div>
+
             </div>
 
-            {/* RIGHT COLUMN: DATA */}
+            {/* RIGHT COLUMN: MAIN FINANCIAL VISUALIZATIONS & LEDGER */}
             <div className="lg:col-span-2 flex flex-col gap-6 print:w-full">
               
-              {/* Savings Goals */}
+              {/* Active Targets / Savings Goals */}
               <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
@@ -903,50 +881,8 @@ const handleAddTransaction = async (e) => {
                 </div>
               </div>
 
-              {/* Category Limits */}
-              <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                    <span className="p-1.5 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 rounded-lg">⚖️</span>
-                    Category Limits
-                  </h3>
-                  <button onClick={() => setIsEditingBudgets(!isEditingBudgets)} className="print:hidden text-[10px] font-bold uppercase tracking-widest bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-3 py-1.5 rounded-md transition-colors active:scale-95">
-                    {isEditingBudgets ? 'Cancel' : 'Edit Limits'}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {categories.slice(1).map(cat => {
-                    const limit = localCatBudgets[cat] || 0;
-                    const spent = categoryTotals[cat];
-                    const percent = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
-                    const barColor = percent >= 90 ? 'from-red-400 to-red-500' : percent >= 75 ? 'from-amber-400 to-orange-400' : 'from-indigo-400 to-purple-500';
-                    return (
-                      <div key={cat} className="bg-slate-50/50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">{cat}</span>
-                          {isEditingBudgets ? (
-                            <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-md focus-within:border-indigo-500 transition-colors">
-                              <span className="text-slate-400 text-xs font-semibold">{getCurrencySymbol()}</span>
-                              <input type="number" className="w-16 bg-transparent text-xs font-bold outline-none text-slate-900 dark:text-white" value={localCatBudgets[cat] || ''} onChange={(e) => handleBudgetChange(cat, e.target.value)} />
-                            </div>
-                          ) : (
-                            <span className="text-[10px] font-semibold text-slate-500 tracking-wide">{formatCurrency(spent)} <span className="font-normal opacity-60">/ {limit > 0 ? formatCurrency(limit) : '∞'}</span></span>
-                          )}
-                        </div>
-                        {!isEditingBudgets && limit > 0 && (
-                          <div className="w-full bg-slate-200/60 dark:bg-slate-700/50 rounded-full h-1.5 overflow-hidden shadow-inner">
-                            <div className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-700`} style={{ width: `${percent}%` }}></div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {isEditingBudgets && <button onClick={handleSaveCategoryBudgets} className="mt-6 w-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-bold py-3 rounded-xl text-sm transition-transform active:scale-[0.98] print:hidden shadow-md">Save Limits</button>}
-              </div>
-
-            {/* Analytics Charts */}
-              {filteredTransactions.length > 0 && (
+              {/* Analytics Charts Panel */}
+              {displayedTransactions.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:hidden">
                   
                   {/* Category Donut Chart */}
@@ -1003,8 +939,9 @@ const handleAddTransaction = async (e) => {
 
                 </div>
               )}
-{/* Settlements & Splits Card */}
-              {projectMembers.length > 1 && filteredTransactions.length > 0 && (
+
+              {/* Group Settlements & Split Analytics Card */}
+              {projectMembers.length > 1 && displayedTransactions.length > 0 && (
                 <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none print:hidden">
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
@@ -1040,48 +977,170 @@ const handleAddTransaction = async (e) => {
                   </div>
                 </div>
               )}
-              {/* Transaction Ledger */}
+
+              {/* Transaction Ledger Layout */}
               <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none overflow-hidden">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800/60 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/20">
                   <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                     <span className="p-1.5 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg">📜</span>
                     Transaction Ledger
                   </h3>
+                  <div className="relative w-full sm:w-64">
+                    <input 
+                      type="text" 
+                      placeholder="Search expenses..." 
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium dark:text-white"
+                    />
+                    <span className="absolute left-3 top-2.5 text-slate-400 text-sm">🔍</span>
+                  </div>
                 </div>
-                <ul className="divide-y divide-slate-100 dark:divide-slate-800/60 max-h-[400px] overflow-y-auto scrollbar-hide">
-                  {filteredTransactions.map((tx) => (
-                    <li key={tx.id} className="p-4 flex justify-between items-center text-sm group hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 font-bold text-xs">
-                          {tx.name.substring(0,2).toUpperCase()}
+
+                {/* EMPTY STATES & LIST RENDERING */}
+                {displayedTransactions.length === 0 ? (
+                  <div className="text-center py-16 bg-white/50 dark:bg-slate-900/50 rounded-b-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                    <div className="text-5xl mb-4 opacity-80">🛒</div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">No expenses matches</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Tap the floating + button to log a brand new transaction.</p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-800/60 max-h-[400px] overflow-y-auto scrollbar-hide">
+                    {displayedTransactions.map((tx) => (
+                      <li key={tx.id} className="p-4 flex justify-between items-center text-sm group hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 font-bold text-xs">
+                            {tx.name.substring(0,2).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900 dark:text-slate-100">{tx.name}</p>
+                            <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
+                              {tx.category} <span className="opacity-40 mx-1">•</span> {new Date(tx.created_at).toLocaleDateString()}
+                              {tx.paid_by && <span className="text-emerald-500 font-bold ml-2">• Paid by: {tx.paid_by === 'Me' ? 'You' : tx.paid_by.split('@')[0]}</span>}
+                              {tx.is_autopay && <span className="text-indigo-500 font-bold ml-2">(Autopay: {tx.due_date})</span>}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-slate-900 dark:text-slate-100">{tx.name}</p>
-                          <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
-                            {tx.category} <span className="opacity-40 mx-1">•</span> {new Date(tx.created_at).toLocaleDateString()}
-                            {tx.is_autopay && <span className="text-indigo-500 font-bold ml-2">(Autopay: {tx.due_date})</span>}
-                          </p>
+                        <div className="flex items-center gap-4">
+                          <span className={`font-extrabold ${tx.is_autopay && tx.due_date > todayStr ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                            -{(formatCurrency(tx.amount))}
+                          </span>
+                          <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-sm active:scale-95 print:hidden">✕</button>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className={`font-extrabold ${tx.is_autopay && tx.due_date > todayStr ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>
-                          -{(formatCurrency(tx.amount))}
-                        </span>
-                        <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-sm active:scale-95 print:hidden">✕</button>
-                      </div>
-                    </li>
-                  ))}
-                  {filteredTransactions.length === 0 && <li className="p-8 text-center text-slate-400 font-medium text-sm">No recorded transactions.</li>}
-                </ul>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
             </div>
           </div>
+
+          {/* DANGER ZONE - DELETE WORKSPACE */}
+          <div className="mt-10 mb-10 p-6 border border-red-500/20 bg-red-500/5 dark:bg-red-900/10 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden">
+            <div>
+              <h3 className="text-red-600 dark:text-red-400 font-semibold text-lg">Danger Zone</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Permanently delete this workspace and all its associated data. This action cannot be undone.
+              </p>
+            </div>
+            <button
+              onClick={handleDeleteWorkspace}
+              className="whitespace-nowrap px-6 py-2.5 bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white transition-all rounded-xl font-medium text-sm border border-red-500/20 shadow-sm active:scale-95"
+            >
+              Delete Workspace
+            </button>
+          </div>
+
+          {/* PREMIUM FINTECH FOOTER */}
+          <footer className="mt-20 border-t border-slate-200/50 dark:border-slate-800/50 pt-8 pb-6 text-center max-w-6xl mx-auto px-4 relative z-10">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-semibold text-slate-400 dark:text-slate-500">
+              <p>© 2026 TrakYourBudget. All rights reserved.</p>
+              <div className="flex flex-wrap justify-center items-center gap-6">
+                <span className="flex items-center gap-1.5">
+                  <span>👤</span> Baseer Ur Rehman
+                </span>
+                <a href="mailto:baseerurrehman1255@gmail.com" className="hover:text-indigo-500 transition-colors flex items-center gap-1.5">
+                  <span>✉️</span> baseerurrehman1255@gmail.com
+                </a>
+                <a href="https://www.linkedin.com/in/baseer-ur-rehman-8ab612309" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 bg-indigo-500/5 dark:bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/10">
+                  Connect on LinkedIn
+                </a>
+              </div>
+            </div>
+          </footer>
+
         </div>
       </motion.div>
 
+      {/* FLOATING ACTION BUTTON (FAB) */}
+      <button 
+        onClick={() => setIsFabModalOpen(true)}
+        className="fixed bottom-6 right-6 sm:bottom-10 sm:right-10 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-[0_10px_25px_-5px_rgba(79,70,229,0.5)] flex items-center justify-center text-3xl transition-transform hover:scale-110 active:scale-95 z-40 print:hidden font-bold"
+      >
+        +
+      </button>
+
+      {/* QUICK LOG ACCESSIBLE MODAL FORM */}
+      {isFabModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white dark:bg-slate-950 rounded-3xl shadow-2xl p-6 relative border border-slate-100 dark:border-slate-800">
+            <button 
+              onClick={() => setIsFabModalOpen(false)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors font-bold"
+            >
+              ✕
+            </button>
+            <h2 className="text-xl font-extrabold text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2">
+              <span>📝</span> Log Workspace Expense
+            </h2>
+            
+            <form onSubmit={handleAddTransaction} className="space-y-4">
+              <input type="text" required placeholder="Description (e.g. Uber)" className="w-full px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all dark:text-white" value={txName} onChange={(e) => setTxName(e.target.value)} />
+              
+              <select className="w-full px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer dark:text-white dark:bg-slate-900" value={txCategory} onChange={(e) => setTxCategory(e.target.value)}>
+                {categories.slice(1).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+
+              <select className="w-full px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer dark:text-white dark:bg-slate-900" value={txPaidBy} onChange={(e) => setTxPaidBy(e.target.value)}>
+                <option value="Me">Paid by: Me</option>
+                {project.collaborators?.map(email => (
+                  <option key={email} value={email}>Paid by: {email.split('@')[0]}</option>
+                ))}
+              </select>
+
+              <div className="relative">
+                <span className="absolute left-4 top-3 text-slate-400 text-sm font-bold">{getCurrencySymbol()}</span>
+                <input type="number" step="0.01" required placeholder="0.00" className="w-full pl-9 pr-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all dark:text-white" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} />
+              </div>
+
+              <div className="flex flex-col gap-2 pt-1">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={isAutopay} onChange={(e) => setIsAutopay(e.target.checked)} />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                  <span className="ml-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Schedule Autopay</span>
+                </label>
+                
+                <input type="file" accept="image/*" capture="environment" ref={receiptInputRef} onChange={handleReceiptScan} className="hidden" />
+                <button type="button" onClick={() => receiptInputRef.current?.click()} disabled={isScanning} className="mt-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 px-3 py-2 rounded-xl transition-all shadow-sm flex items-center justify-center gap-1 w-full">
+                  {isScanning ? `⏳ Scanning ${scanProgress}` : '📸 Capture Receipt with Scanner'}
+                </button>
+              </div>
+              
+              {isAutopay && (
+                <input type="date" required className="w-full px-4 py-3 text-sm font-semibold bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all text-slate-600 dark:text-slate-300" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              )}
+
+              <button type="submit" disabled={isAdding || isScanning} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl text-sm shadow-md shadow-indigo-500/20 transition-all transform active:scale-[0.98] disabled:opacity-50">
+                {isAdding ? 'Saving...' : 'Submit Expense'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* FLOATING AI CHATBOT UI */}
-      <div className="fixed bottom-6 right-6 z-40 print:hidden flex flex-col items-end">
+      <div className="fixed bottom-6 left-6 z-40 print:hidden flex flex-col items-start">
         <AnimatePresence>
           {isChatOpen && (
             <motion.div 
