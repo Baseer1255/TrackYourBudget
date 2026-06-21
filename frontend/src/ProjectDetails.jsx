@@ -80,6 +80,7 @@ const ProjectDetails = () => {
   const [txName, setTxName] = useState('');
   const [txAmount, setTxAmount] = useState('');
   const [txCategory, setTxCategory] = useState('General');
+  const [txPaidBy, setTxPaidBy] = useState('Me');
   
   // Autopay State
   const [isAutopay, setIsAutopay] = useState(false);
@@ -280,8 +281,7 @@ const ProjectDetails = () => {
     const { error } = await supabase.from('savings_goals').delete().eq('id', goalId);
     if (!error) { showToast('🗑️ Goal removed!'); fetchData(); }
   };
-
-  const handleAddTransaction = async (e) => {
+const handleAddTransaction = async (e) => {
     e.preventDefault();
     setIsAdding(true);
     playSound('success'); 
@@ -289,6 +289,7 @@ const ProjectDetails = () => {
     const { data: { user } } = await supabase.auth.getUser();
     const baseAmount = toBaseCurrency(txAmount);
     
+    // Updated Local State (Includes Autopay and Paid By)
     const newTx = { 
       id: Math.random(), 
       project_id: id, 
@@ -297,11 +298,13 @@ const ProjectDetails = () => {
       category: txCategory, 
       created_at: new Date().toISOString(),
       is_autopay: isAutopay,
-      due_date: isAutopay ? dueDate : null
+      due_date: isAutopay ? dueDate : null,
+      paid_by: txPaidBy
     };
     
     setTransactions([newTx, ...transactions]);
     
+    // Updated Database Insert (Sends fields to Supabase)
     const { error } = await supabase.from('transactions').insert([{ 
       project_id: id, 
       user_id: user.id, 
@@ -309,15 +312,21 @@ const ProjectDetails = () => {
       amount: baseAmount, 
       category: txCategory,
       is_autopay: isAutopay,
-      due_date: isAutopay ? dueDate : null
+      due_date: isAutopay ? dueDate : null,
+      paid_by: txPaidBy
     }]);
 
     if (error) { 
       alert('Error logging expense: ' + error.message); 
       fetchData(); 
     } else { 
-      setTxName(''); setTxAmount(''); setTxCategory('General'); 
-      setIsAutopay(false); setDueDate('');
+      // Reset all form inputs on success
+      setTxName(''); 
+      setTxAmount(''); 
+      setTxCategory('General'); 
+      setIsAutopay(false); 
+      setDueDate('');
+      setTxPaidBy('Me'); 
       showToast(isAutopay ? '⏱️ Autopay Scheduled!' : '✅ Expense saved successfully!'); 
     }
     setIsAdding(false);
@@ -453,7 +462,27 @@ const ProjectDetails = () => {
   const pieData = Object.keys(categoryTotals)
     .filter(cat => categoryTotals[cat] > 0)
     .map(cat => ({ name: cat, value: categoryTotals[cat] * exchangeRate }));
-    
+    // 👇 SETTLEMENT MATH ENGINE 👇
+  const projectMembers = ['Me', ...(project.collaborators || [])];
+  const splitShare = projectMembers.length > 0 ? totalSpent / projectMembers.length : totalSpent;
+  
+  const memberBalances = {};
+  projectMembers.forEach(m => memberBalances[m] = 0);
+  
+  deductedTransactions.forEach(tx => {
+    const payer = tx.paid_by || 'Me';
+    if (memberBalances[payer] !== undefined) {
+      memberBalances[payer] += (parseFloat(tx.amount) || 0);
+    } else {
+      memberBalances['Me'] += (parseFloat(tx.amount) || 0); // Fallback
+    }
+  });
+
+  const settlements = projectMembers.map(member => {
+    const paid = memberBalances[member];
+    const balance = paid - splitShare; // Positive = they are owed money. Negative = they owe money.
+    return { member, paid, balance };
+  }).sort((a, b) => b.balance - a.balance); // Sort so people who are owed the most are at the top
   // Premium Fintech Color Palette for Categories
   const CATEGORY_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#10b981', '#14b8a6', '#64748b'];
   
@@ -974,7 +1003,43 @@ const ProjectDetails = () => {
 
                 </div>
               )}
-
+{/* Settlements & Splits Card */}
+              {projectMembers.length > 1 && filteredTransactions.length > 0 && (
+                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none print:hidden">
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <span className="p-1.5 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-lg">🤝</span>
+                      Group Settlements
+                    </h3>
+                    <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-100 dark:bg-slate-800 text-slate-500 px-3 py-1.5 rounded-md">
+                      {projectMembers.length} Equal Shares
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {settlements.map((s, idx) => (
+                      <div key={idx} className="bg-slate-50/50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                            {s.member === 'Me' ? 'You' : s.member.split('@')[0]}
+                          </p>
+                          <p className="text-[10px] font-semibold text-slate-400 mt-0.5">
+                            Paid {formatCurrency(s.paid)} total
+                          </p>
+                        </div>
+                        <div className={`text-right ${s.balance >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                          <p className="text-sm font-extrabold">
+                            {s.balance >= 0 ? '+' : ''}{formatCurrency(s.balance)}
+                          </p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">
+                            {s.balance >= 0 ? 'Gets Back' : 'Owes Group'}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Transaction Ledger */}
               <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-100 dark:border-slate-800/60 shadow-lg shadow-slate-200/50 dark:shadow-none overflow-hidden">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800/60 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
