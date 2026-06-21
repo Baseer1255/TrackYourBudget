@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @variant dark (&:where(.dark, .dark *));
-
 /* --- NEW: Force the browser to render background colors in PDFs --- */
 @media print {
   html, body {
