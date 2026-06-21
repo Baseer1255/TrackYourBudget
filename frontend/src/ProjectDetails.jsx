@@ -439,6 +439,13 @@ const ProjectDetails = () => {
   const spendPercent = Math.min((totalSpent / (currentBudget || 1)) * 100, 100);
   let progressColor = spendPercent >= 85 ? 'from-red-500 to-rose-500' : spendPercent >= 50 ? 'from-amber-400 to-orange-500' : 'from-indigo-500 to-purple-500';
 
+  const spendPercent = Math.min((totalSpent / (currentBudget || 1)) * 100, 100);
+  let progressColor = spendPercent >= 85 ? 'from-red-500 to-rose-500' : spendPercent >= 50 ? 'from-amber-400 to-orange-500' : 'from-indigo-500 to-purple-500';
+
+  // 👇 ADD THIS NEW BANNER LOGIC 👇
+  let bannerStatus = { text: 'On Track', color: 'bg-emerald-500 dark:bg-emerald-600', shadow: 'shadow-emerald-500/20', icon: '✅' };
+  if (spendPercent >= 100) bannerStatus = { text: 'Over Budget', color: 'bg-red-500 dark:bg-red-600', shadow: 'shadow-red-500/20', icon: '🚨' };
+  else if (spendPercent >= 80) bannerStatus = { text: 'Approaching Limit', color: 'bg-amber-500 dark:bg-amber-600', shadow: 'shadow-amber-500/20', icon: '⚠️' };
   const categoryTotals = {};
   categories.forEach(cat => categoryTotals[cat] = 0);
   deductedTransactions.forEach(tx => { categoryTotals[tx.category || 'General'] += (parseFloat(tx.amount) || 0); });
@@ -584,6 +591,26 @@ const ProjectDetails = () => {
 
         <div id="pdf-report-content" className="pb-8 space-y-6">
 
+          {/* 👇 NEW DYNAMIC STATUS BANNER 👇 */}
+          <div className={`print:hidden flex items-center justify-between p-5 rounded-2xl text-white shadow-lg transition-colors duration-700 ${bannerStatus.color} ${bannerStatus.shadow}`}>
+            <div className="flex items-center gap-4">
+              <div className="text-3xl bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                {bannerStatus.icon}
+              </div>
+              <div>
+                <h2 className="text-lg font-extrabold tracking-tight">Workspace Status: {bannerStatus.text}</h2>
+                <p className="text-sm text-white/90 font-medium mt-0.5">
+                  You have utilized {spendPercent.toFixed(1)}% of your total available capital.
+                </p>
+              </div>
+            </div>
+            {spendPercent >= 100 && (
+              <button onClick={() => setIsAddingSalary(true)} className="hidden sm:block bg-white text-red-600 font-bold px-4 py-2 rounded-lg text-sm shadow-sm hover:scale-105 active:scale-95 transition-transform">
+                Add Funds
+              </button>
+            )}
+          </div>
+          {/* 👆 END STATUS BANNER 👆 */}
           {/* PREDICTIVE ALERTS BANNER */}
           <AnimatePresence>
             {isTrendingOverBudget && (
