@@ -641,12 +641,6 @@ const ProjectDetails = () => {
             <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="text-xs font-medium bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white px-3 py-1.5 rounded hover:bg-gray-50 transition-colors hidden lg:block shadow-sm">
               {isImporting ? 'Importing...' : 'Import CSV'}
             </button>
-            {/* RESTORED: Print report button */}
-            {transactions.length > 0 && (
-              <button onClick={() => window.print()} className="text-xs font-medium bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white px-3 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-[#242424] transition-colors hidden lg:block shadow-sm">
-                Print Report
-              </button>
-            )}
           </div>
         </header>
 
@@ -658,7 +652,7 @@ const ProjectDetails = () => {
             {/* HERO SECTION */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-gray-200 dark:border-gray-800 pb-6">
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{project.name}</h1>
+              <h1 className="text-3xl font-bold tracking-tight !text-black dark:!text-white">{project.name}</h1>
                 <div className="mt-2 flex items-center gap-3 text-sm text-gray-500">
                   <span>{project.collaborators?.length ? project.collaborators.length + 1 : 1} Members</span>
                   <span>•</span>

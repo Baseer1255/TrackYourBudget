@@ -208,8 +208,7 @@ function Dashboard({ session, isDarkMode, toggleTheme }) {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-gray-200 dark:border-gray-800 pb-6">
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Overview</p>
-                <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{greeting}, {displayName}</h1>
-              </div>
+               <h1 className="text-3xl font-bold tracking-tight !text-black dark:!text-white">{greeting}, {displayName}</h1>
             </div>
 
             {/* MAGIC COMMAND */}
@@ -222,6 +221,7 @@ function Dashboard({ session, isDarkMode, toggleTheme }) {
                 </button>
               </form>
             )}
+          </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
               

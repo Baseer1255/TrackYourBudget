@@ -33,7 +33,9 @@ const Register = () => {
         <div className="max-w-sm w-full mx-auto">
           <div className="w-8 h-8 bg-black text-white rounded flex items-center justify-center font-bold mb-8 shadow-sm">T</div>
           
-          <h1 className="text-2xl font-serif text-gray-900 tracking-tight mb-2">Create your account</h1>
+         <h1 className="text-3xl font-bold tracking-tight mb-2 !text-black dark:!text-white">
+  Join TrakYourBudget
+</h1>
           <p className="text-sm text-gray-500 mb-6">Join TrakYourBudget to manage workspace funding seamlessly.</p>
 
           {errorMsg && <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-md border border-red-100 font-medium">{errorMsg}</div>}

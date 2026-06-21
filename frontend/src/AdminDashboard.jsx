@@ -85,7 +85,7 @@ const AdminDashboard = ({ session }) => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 bg-white dark:bg-[#1a1a1a] p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3 !text-black dark:!text-white">
               <span className="text-xl">🛡️</span> System Control
             </h1>
             <p className="text-gray-500 font-medium text-xs mt-2 flex items-center gap-2">
